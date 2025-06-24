@@ -58,6 +58,13 @@ MIT — use these samples freely in your own Nine projects.
 
 ---
 
+### 🚀 Live Samples
+
+🔹 [EmojiVault.nine - Play Live](https://contract-os.com/play/game/0x436f6e7472616374313735303737383930313130) - html version
+🔹 [GemCollector.nine - Play Live](https://contract-os.com/play/game/0x4e696e652047656d20436f6c6c6563746f72204d) - Added minimap
+
+---
+
 ## ✨ Stay Connected
 
 * 🌐 [Contract OS](https://contract-os.com)

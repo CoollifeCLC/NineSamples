@@ -1,4 +1,4 @@
-<!-- .nine content starts here -->
+<!-- .nine content starts here --> // Ignore compile error for now
 
 <div id="ui">
   <div id="timer">⏱️ Time: 0s</div>

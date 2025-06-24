@@ -1,5 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Emoji Vault Game</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+    #ui {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+    #timer {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+    #restart {
+      padding: 6px 12px;
+      background: #ff4081;
+      border: none;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #minimap {
+      margin-top: 10px;
+      background: #222;
+      padding: 5px;
+      font-size: 10px;
+      line-height: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="timer">⏱️ Time: 0s</div>
+  <button id="restart">🔄 Restart</button>
+  <div id="minimap"></div>
+</div>
+
+<script>
 // Map
-let map = [
+let originalMap = [
   "########################",
   "#..P......G..........G.#",
   "#..####.............####",
@@ -12,23 +62,38 @@ let map = [
   "########################"
 ];
 
+let map, playerX, playerY, timerInterval, secondsElapsed;
+
 const TILE_SIZE = 64;
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 
-canvas.width = TILE_SIZE * map[0].length;
-canvas.height = TILE_SIZE * map.length;
-
+canvas.width = TILE_SIZE * originalMap[0].length;
+canvas.height = TILE_SIZE * originalMap.length;
 document.body.appendChild(canvas);
 
-let playerX = 3, playerY = 1;
-
 const tileMap = {
-  "#": "🧱", // Wall
-  ".": "🌑", // Floor
-  "P": "🕵️‍♂️", // Player
-  "G": "💰"  // Gold/Treasure
+  "#": "🧱", ".": "🌑", "P": "🕵️‍♂️", "G": "💰"
 };
+
+function startGame() {
+  map = [...originalMap];
+  playerX = 3;
+  playerY = 1;
+  secondsElapsed = 0;
+  updateTimer();
+  renderMap();
+  renderMiniMap();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    secondsElapsed++;
+    updateTimer();
+  }, 1000);
+}
+
+function updateTimer() {
+  document.getElementById("timer").innerText = `⏱️ Time: ${secondsElapsed}s`;
+}
 
 function renderMap() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -57,8 +122,9 @@ function movePlayer(dx, dy) {
   playerX = newX;
   playerY = newY;
 
-  checkVictory();
   renderMap();
+  renderMiniMap();
+  checkVictory();
 }
 
 function replaceChar(str, index, newChar) {
@@ -68,8 +134,20 @@ function replaceChar(str, index, newChar) {
 function checkVictory() {
   const treasuresLeft = map.flatMap(row => [...row]).filter(c => c === "G").length;
   if (treasuresLeft === 0) {
-    alert("🎉 Vault Cleared! All gold bags collected.");
+    clearInterval(timerInterval);
+    setTimeout(() => {
+      alert(`🎉 Vault Cleared! Time: ${secondsElapsed}s`);
+    }, 100);
   }
+}
+
+function renderMiniMap() {
+  const minimap = map.map((row, y) =>
+    [...row].map((c, x) =>
+      x === playerX && y === playerY ? "🧍" : c === "G" ? "💰" : c === "#" ? "⬜" : "⬛"
+    ).join("")
+  ).join("<br>");
+  document.getElementById("minimap").innerHTML = minimap;
 }
 
 document.addEventListener("keydown", (e) => {
@@ -79,4 +157,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") movePlayer(1, 0);
 });
 
-renderMap();
+document.getElementById("restart").addEventListener("click", startGame);
+
+// Go!
+startGame();
+</script>
+
+</body>
+</html>

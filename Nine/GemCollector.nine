@@ -1,0 +1,89 @@
+// Map
+let map = [
+  "########################",
+  "#..P......G..........G..#",
+  "#..####.............####",
+  "#.......G........G......#",
+  "#..####..####..####..###",
+  "#..........G........G...#",
+  "#..####..####..####..###",
+  "#...G......G........G...#",
+  "#............G..........#",
+  "########################"
+];
+
+const TILE_SIZE = 64;
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = TILE_SIZE * map[0].length;  // ✅ Safe now
+canvas.height = TILE_SIZE * map.length;
+
+document.body.appendChild(canvas);
+
+let playerX = 3, playerY = 1;
+
+// Emojis for tiles
+const tileMap = {
+  "#": "🟥", // Wall
+  ".": "⬛", // Ground
+  "P": "🧍", // Player
+  "G": "💎"  // Gem
+};
+
+// Render map as emoji tiles
+function renderMap() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "48px monospace";
+  for (let y = 0; y < map.length; y++) {
+    for (let x = 0; x < map[y].length; x++) {
+      const char = map[y][x];
+      ctx.fillText(tileMap[char] || tileMap["."], x * TILE_SIZE, (y + 1) * TILE_SIZE - 10);
+    }
+  }
+}
+
+// Move player and check tile
+function movePlayer(dx, dy) {
+  const newX = playerX + dx;
+  const newY = playerY + dy;
+  const targetTile = map[newY][newX];
+
+  if (targetTile === "#") return;
+
+  // Handle gem collection
+  if (targetTile === "G") {
+    console.log("💎 Gem collected!");
+  }
+
+  map[playerY] = replaceChar(map[playerY], playerX, ".");
+  map[newY] = replaceChar(map[newY], newX, "P");
+  playerX = newX;
+  playerY = newY;
+
+  checkVictory();
+  renderMap();
+}
+
+// Helpers
+function replaceChar(str, index, newChar) {
+  return str.substring(0, index) + newChar + str.substring(index + 1);
+}
+
+function checkVictory() {
+  const gemsLeft = map.flatMap(row => [...row]).filter(c => c === "G").length;
+  if (gemsLeft === 0) {
+    alert("🎉 Victory! All gems collected.");
+  }
+}
+
+// Keyboard controls
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowUp") movePlayer(0, -1);
+  if (e.key === "ArrowDown") movePlayer(0, 1);
+  if (e.key === "ArrowLeft") movePlayer(-1, 0);
+  if (e.key === "ArrowRight") movePlayer(1, 0);
+});
+
+// Start game
+renderMap();

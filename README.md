@@ -60,9 +60,10 @@ MIT — use these samples freely in your own Nine projects.
 
 ### 🚀 Live Samples
 
-🔹 [EmojiVault.nine - Play Live](https://contract-os.com/play/game/0x436f6e7472616374313735303737383930313130) - html version - with two playables
-🔹 [GemCollector.nine - Play Live](https://contract-os.com/play/game/0x4e696e652047656d20436f6c6c6563746f72204d) - Added minimap
-🔹 [GemCollector.nine - Play Live](https://contract-os.com/play/game/0x536865726c6f636b313735303838373834363634) - Added Another Level
+🔹 [EmojiVault.nine - Play Live](https://contract-os.com/play/game/0x436f6e7472616374313735303737383930313130) - html version - with two playables - two levels
+🔹 [GemCollector.nine - Play Live](https://contract-os.com/play/game/0x4e696e652047656d20436f6c6c6563746f72204d) - Added minimap - two playthrough levels
+🔹 [Test Casino.nine - Play Live](https://contract-os.com/play/game/0x4e696e6520436173696e6f20456d6f6a69204564)
+🔹 [Original Gem Collector before UI changes - Play Live](https://contract-os.com/play/game/0x47656d20436f6c6c6563746f72204c6172676572)
 
 ---
 

@@ -1,0 +1,66 @@
+// ---- State Variables ----
+let owner = "0xADMIN";                  // contract owner address
+let subscriptions = {};                 // user address => subscription struct
+let tierDurations = {                   // tier => duration in days
+  "basic": 30,
+  "pro": 90,
+  "enterprise": 365
+};
+let tierPrices = {                      // tier => price in stable token or native currency units
+  "basic": 100,
+  "pro": 250,
+  "enterprise": 1000
+};
+
+// ---- Types ----
+type Subscription {
+  tier: string,
+  expiry: uint
+}
+
+// ---- Events ----
+event SubscriptionCreated(user: address, tier: string, expiry: uint);
+event SubscriptionRenewed(user: address, tier: string, newExpiry: uint);
+event TierUpdated(tier: string, price: uint, duration: uint);
+
+// ---- Functions ----
+
+// Create a new subscription (or renew if exists)
+function subscribe(tier, paymentAmount, currentTime) {
+  require(tierDurations[tier] > 0);                           // valid tier
+  require(paymentAmount >= tierPrices[tier]);                 // paid enough
+
+  let expiry;
+  if (subscriptions[msg.sender].expiry > currentTime) {
+    expiry = subscriptions[msg.sender].expiry + tierDurations[tier] * 86400; // extend existing
+  } else {
+    expiry = currentTime + tierDurations[tier] * 86400;       // new subscription
+  }
+
+  subscriptions[msg.sender] = Subscription { tier: tier, expiry: expiry };
+  emit SubscriptionCreated(msg.sender, tier, expiry);
+}
+
+// Check if a user is currently subscribed
+function isActive(user, currentTime) returns (bool) {
+  return subscriptions[user].expiry > currentTime;
+}
+
+// Get details of a user's subscription
+function getSubscription(user) returns (Subscription) {
+  return subscriptions[user];
+}
+
+// Admin: update tier price and duration
+function updateTier(tier, newPrice, newDuration) {
+  require(msg.sender == owner);
+  tierPrices[tier] = newPrice;
+  tierDurations[tier] = newDuration;
+  emit TierUpdated(tier, newPrice, newDuration);
+}
+
+// Admin: transfer ownership
+function transferOwnership(newOwner) {
+  require(msg.sender == owner);
+  owner = newOwner;
+}

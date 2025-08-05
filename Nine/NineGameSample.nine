@@ -1,0 +1,203 @@
+<!-- .nine content starts here -->
+
+<div id="ui">
+  <div id="timer">⏱️ Time: 0s</div>
+  <button id="restart">🔄 Restart</button>
+  <div id="minimap"></div>
+</div>
+
+<canvas id="dungeon" width="1536" height="640"></canvas>
+
+<style>
+  :root {
+    --bg-color: #111;
+    --text-color: #fff;
+    --accent-color: #ff4081;
+    --font-family: 'Segoe UI', sans-serif;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    overflow: hidden;
+  }
+
+  #ui {
+    position: fixed;
+    top: 60px; /* moved down to avoid "Playing:" */
+    right: 20px; /* small right shift */
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.5); /* optional: adds contrast */
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  #timer {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+  }
+
+  #restart {
+    padding: 6px 12px;
+    background: var(--accent-color);
+    border: none;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  #minimap {
+    margin-top: 10px;
+    background: #222;
+    padding: 5px;
+    font-size: 10px;
+    line-height: 10px;
+  }
+</style>
+
+<script type="module" nonce="9ether-dev">
+  const TILE_SIZE = 64;
+  let playerX = 3, playerY = 1;
+  let timer = 0;
+  let interval;
+  let level = 0;
+
+  const levels = [
+    [
+      "########################",
+      "#..P......G..........G.#",
+      "#..####.............###",
+      "#.......G........G.....#",
+      "#..####..####..####..##",
+      "#..........G........G..#",
+      "#..####..####..####..##",
+      "#...G......G........G..#",
+      "#............G.........#",
+      "########################"
+    ],
+    [
+      "########################",
+      "#..P...G......☠️......G.#",
+      "#..###..☠️.............##",
+      "#.......G........G..☠️..#",
+      "#..####..####..####..##",
+      "#..........G.....☠️..G..#",
+      "#..####..####..####..##",
+      "#...G......G........G..#",
+      "#....☠️.....G..........#",
+      "########################"
+    ]
+  ];
+
+  const tileMap = {
+    "#": "🟥",
+    ".": "⬛",
+    "P": "🧍",
+    "G": "💎",
+    "☠️": "☠️"
+  };
+
+  let map = levels[level];
+  const canvas = document.getElementById("dungeon");
+  const ctx = canvas.getContext("2d");
+
+  const replaceChar = (str, index, char) =>
+    str.substring(0, index) + char + str.substring(index + 1);
+
+  function findPlayer() {
+    for (let y = 0; y < map.length; y++) {
+      const x = map[y].indexOf("P");
+      if (x !== -1) {
+        playerX = x;
+        playerY = y;
+        return;
+      }
+    }
+  }
+
+  function renderMap() {
+    requestAnimationFrame(() => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = "48px monospace";
+      for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < map[y].length; x++) {
+          const char = map[y][x];
+          ctx.fillText(tileMap[char] || "⬛", x * TILE_SIZE, (y + 1) * TILE_SIZE - 10);
+        }
+      }
+      updateMinimap();
+    });
+  }
+
+  function updateMinimap() {
+    const mini = map.map(row =>
+      [...row].map(c => tileMap[c] || "⬛").join("")
+    ).join("<br>");
+    document.getElementById("minimap").innerHTML = mini;
+  }
+
+  function checkVictory() {
+    const gemsLeft = map.flatMap(r => [...r]).filter(c => c === "G").length;
+    if (gemsLeft === 0) {
+      clearInterval(interval);
+      setTimeout(() => {
+        alert(`🎉 Level ${level + 1} Complete in ${timer}s!`);
+        level++;
+        if (level < levels.length) {
+          map = levels[level];
+          findPlayer();
+          timer = 0;
+          interval = setInterval(() => {
+            timer++;
+            document.getElementById("timer").textContent = `⏱️ Time: ${timer}s`;
+          }, 1000);
+          renderMap();
+        } else {
+          alert("🏁 All levels complete! You win!");
+        }
+      }, 100);
+    }
+  }
+
+  function movePlayer(dx, dy) {
+    const newX = playerX + dx;
+    const newY = playerY + dy;
+    const target = map[newY][newX];
+    if (target === "#") return;
+    if (target === "☠️") {
+      alert("💥 You stepped on a bomb! Game Over.");
+      location.reload();
+      return;
+    }
+
+    map[playerY] = replaceChar(map[playerY], playerX, ".");
+    map[newY] = replaceChar(map[newY], newX, "P");
+    playerX = newX;
+    playerY = newY;
+
+    renderMap();
+    checkVictory();
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "ArrowUp") movePlayer(0, -1);
+    if (e.key === "ArrowDown") movePlayer(0, 1);
+    if (e.key === "ArrowLeft") movePlayer(-1, 0);
+    if (e.key === "ArrowRight") movePlayer(1, 0);
+  });
+
+  document.getElementById("restart").addEventListener("click", () => {
+    location.reload();
+  });
+
+  interval = setInterval(() => {
+    timer++;
+    document.getElementById("timer").textContent = `⏱️ Time: ${timer}s`;
+  }, 1000);
+
+  findPlayer();
+  renderMap();
+</script>

@@ -1,0 +1,166 @@
+<!-- .nine content starts here -->
+<div id="fusion-ui">
+  <h1>🧬 Fusion Lab</h1>
+
+  <section id="parents">
+    <div class="parent">
+      <h3>Parent 1</h3>
+      <select id="parent1-select"></select>
+    </div>
+    <div class="parent">
+      <h3>Parent 2</h3>
+      <select id="parent2-select"></select>
+    </div>
+  </section>
+
+  <button id="fuse-btn">🔀 Fuse</button>
+
+  <section id="offspring">
+    <h3>👶 Offspring Preview</h3>
+    <div id="offspring-preview">—</div>
+  </section>
+
+  <button id="save-btn">💾 Save to Neftadex</button>
+
+  <section id="neftadex">
+    <h3>📘 Neftadex</h3>
+    <ul id="dex-list"></ul>
+  </section>
+</div>
+
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: #0a0a0a;
+    color: white;
+  }
+
+  #fusion-ui {
+    max-width: 600px;
+    margin: auto;
+    background: #1a1a1a;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 0 20px #000;
+  }
+
+  h1, h3 {
+    text-align: center;
+    margin-bottom: 10px;
+  }
+
+  #parents {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .parent {
+    flex: 1;
+  }
+
+  select, button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    margin-top: 5px;
+    font-weight: bold;
+  }
+
+  button {
+    background: #ff4081;
+    color: white;
+    cursor: pointer;
+    margin-bottom: 20px;
+  }
+
+  #offspring-preview {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+    background: #222;
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  #neftadex ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  #neftadex li {
+    background: #111;
+    margin-bottom: 6px;
+    padding: 8px;
+    border-radius: 6px;
+  }
+</style>
+
+<script type="module" nonce="nine-fusion">
+  const traits = [
+    { name: "Firebeast", element: "Fire", speed: 7, rarity: 3 },
+    { name: "Windracer", element: "Wind", speed: 9, rarity: 2 },
+    { name: "Aquafy", element: "Water", speed: 5, rarity: 4 },
+  ];
+
+  const parent1Select = document.getElementById("parent1-select");
+  const parent2Select = document.getElementById("parent2-select");
+  const preview = document.getElementById("offspring-preview");
+  const dexList = document.getElementById("dex-list");
+
+  traits.forEach((trait, i) => {
+    const opt1 = document.createElement("option");
+    opt1.value = i;
+    opt1.textContent = trait.name;
+    parent1Select.appendChild(opt1);
+
+    const opt2 = document.createElement("option");
+    opt2.value = i;
+    opt2.textContent = trait.name;
+    parent2Select.appendChild(opt2);
+  });
+
+  const fuse = (a, b) => {
+    return {
+      name: `${a.name.slice(0, 3)}${b.name.slice(3)}`,
+      element: Math.random() < 0.5 ? a.element : b.element,
+      speed: Math.floor((a.speed + b.speed) / 2 + (Math.random() < 0.5 ? 1 : 0)),
+      rarity: Math.max(a.rarity, b.rarity) + (Math.random() < 0.3 ? 1 : 0)
+    };
+  };
+
+  document.getElementById("fuse-btn").addEventListener("click", () => {
+    const parent1 = traits[parent1Select.value];
+    const parent2 = traits[parent2Select.value];
+
+    const child = fuse(parent1, parent2);
+    preview.textContent = `👶 ${child.name} | ${child.element} | Speed: ${child.speed} | Rarity: ${child.rarity}`;
+    preview.dataset.child = JSON.stringify(child);
+  });
+
+  document.getElementById("save-btn").addEventListener("click", () => {
+    const child = JSON.parse(preview.dataset.child || "null");
+    if (!child) return alert("⚠️ No child to save!");
+
+    const li = document.createElement("li");
+    li.textContent = `${child.name} | ${child.element} | Speed: ${child.speed} | Rarity: ${child.rarity}`;
+    dexList.appendChild(li);
+
+    // Save to localStorage
+    const saved = JSON.parse(localStorage.getItem("neftadex") || "[]");
+    saved.push(child);
+    localStorage.setItem("neftadex", JSON.stringify(saved));
+  });
+
+  // Load saved Neftas
+  const saved = JSON.parse(localStorage.getItem("neftadex") || "[]");
+  saved.forEach(child => {
+    const li = document.createElement("li");
+    li.textContent = `${child.name} | ${child.element} | Speed: ${child.speed} | Rarity: ${child.rarity}`;
+    dexList.appendChild(li);
+  });
+</script>

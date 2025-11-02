@@ -1,0 +1,344 @@
+<!-- Emoji Football — COMPLETE UPDATED BUILD -->
+
+<div id="hud">
+  <div>⏱ <span id="time">1:00</span></div>
+  <div>Score: <span id="homeScore">0</span> - <span id="awayScore">0</span></div>
+  <div>Possession: <span id="possession">HOME</span></div>
+  <select id="difficulty" title="Difficulty">
+    <option value="easy">Easy</option>
+    <option value="normal" selected>Normal</option>
+    <option value="hard">Hard</option>
+  </select>
+  <button id="helpBtn" title="Rules & Tips">?</button>
+  <button id="restart">Restart</button>
+</div>
+
+<canvas id="field" width="1024" height="576"></canvas>
+
+<!-- Rules / Tips Modal -->
+<div id="rulesModal" hidden>
+  <div class="panel">
+    <h3>Emoji Football — Rules</h3>
+    <ul>
+      <li>Move with <b>WASD</b> / <b>Arrow Keys</b>.</li>
+      <li><b>Hold Space</b> to charge, <b>release</b> to kick the 🏈.</li>
+      <li>White column is midfield. 🟦 left endzone = Away TD, 🟥 right endzone = Home TD.</li>
+      <li>Ball carrier determines possession. Intercept by stepping on the ball.</li>
+    </ul>
+    <p class="tip" id="tipLine">Tip: Hold Space for a stronger kick.</p>
+    <div class="modal-actions">
+      <button id="closeRules">Close</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  :root { --bg:#0b1020; --ink:#d2e7ff; }
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui}
+  #hud{position:fixed;top:18px;left:18px;z-index:10;background:#0f1426cc;border:1px solid #2b3557;border-radius:12px;padding:10px 14px;display:flex;gap:14px;align-items:center;backdrop-filter:blur(4px)}
+  #hud button,#hud select{background:#0f1426;color:#d2e7ff;border:1px solid #2b3557;border-radius:10px;padding:6px 10px;cursor:pointer}
+  #hud button:hover,#hud select:hover{border-color:#4661ff}
+  #field{display:block;margin:88px auto 0;background:#0b5;border:2px solid #0a3;border-radius:12px;box-shadow:0 20px 50px #0006}
+  /* Modal */
+  #rulesModal{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:99}
+  #rulesModal .panel{width:min(560px,92vw);background:#0f1426;border:1px solid #2b3557;border-radius:14px;padding:18px 20px;color:#d2e7ff;box-shadow:0 20px 60px #000a}
+  #rulesModal h3{margin:8px 0 10px}
+  #rulesModal ul{margin:8px 0 12px 18px}
+  #rulesModal .tip{opacity:.9;margin-top:4px}
+  #rulesModal .modal-actions{display:flex;justify-content:flex-end;margin-top:10px}
+  #rulesModal button{background:#13204a;color:#d2e7ff;border:1px solid #2b3557;border-radius:10px;padding:6px 12px;cursor:pointer}
+  #rulesModal button:hover{border-color:#6ea4ff}
+  #rulesModal[hidden]{ display:none !important; }
+</style>
+
+<script type="module" nonce="9ether-dev">
+  /* ------------------ Core Constants ------------------ */
+  const TILE=64, GRID_W=16, GRID_H=9;
+  const P1="🧍", P2="🧍‍♂️", BALL="🏈";
+
+  const TILES = { G: '🟩', L: '🟦', R: '🟥' }; // glyphs
+  /* ------------------ Canvas Setup ------------------ */
+  const canvas=document.getElementById("field");
+  const ctx=canvas.getContext("2d");
+  ctx.font="48px monospace";
+
+  /* ------------------ Game State ------------------ */
+  let clock=60, tick=null, aiTick=null, ballTick=null;
+  let lastDir=[1,0];
+  let possession="HOME";
+  const score={home:0,away:0};
+  let inputLocked=false;
+
+  // Difficulty profile
+  const DIFF = {
+    easy:   { aiMs: 300, reach: 0, jitter: 0.00 },
+    normal: { aiMs: 220, reach: 0, jitter: 0.15 },
+    hard:   { aiMs: 150, reach: 1, jitter: 0.30 }
+  };
+  let diff='normal', AI_MS=DIFF[diff].aiMs, AI_REACH=DIFF[diff].reach, AI_JITTER=DIFF[diff].jitter;
+
+  // Kick charge
+  let kickCharge=0, charging=false, chargeTimer=null;
+
+  /* ------------------ Map / Entities ------------------ */
+  function buildField(){
+    const rows = [];
+    for (let y = 0; y < GRID_H; y++) {
+      const row = Array(GRID_W).fill('G');        // default grass
+      if (y !== 0 && y !== GRID_H - 1) {          // leave top/bottom solid green
+        row[0] = 'L'; row[1] = 'L';               // left endzone
+        row[GRID_W - 2] = 'R'; row[GRID_W - 1] = 'R'; // right endzone
+      }
+      rows.push(row);
+    }
+    return rows;                                  // 2D array of tokens
+  }
+
+  let map = buildField();
+
+  function tileAt(x, y) {
+    if (y < 0 || y >= GRID_H || x < 0 || x >= GRID_W) return 'G';
+    return map[y]?.[x] ?? 'G';
+  }
+
+  const ents={
+    home:{x:3,y:Math.floor(GRID_H/2),emoji:P1},
+    away:{x:GRID_W-4,y:Math.floor(GRID_H/2),emoji:P2},
+    ball:{x:4,y:Math.floor(GRID_H/2),vx:0,vy:0}
+  };
+
+  /* ------------------ Helpers ------------------ */
+  function putEmoji(x,y,e){ ctx.fillText(e,x*TILE,(y+1)*TILE-12); }
+  function clamp(v,min,max){ return Math.min(max,Math.max(min,v)); }
+
+  function setDifficulty(d) {
+    diff = (d in DIFF) ? d : 'normal';
+    AI_MS     = DIFF[diff].aiMs;
+    AI_REACH  = DIFF[diff].reach;
+    AI_JITTER = DIFF[diff].jitter;
+    // restart AI loop with new cadence
+    if (aiTick) { clearInterval(aiTick); aiTick = setInterval(aiStep, AI_MS); }
+  }
+
+  /* ------------------ UI ------------------ */
+  const difficultySel = document.getElementById('difficulty');
+  difficultySel.onchange = (e)=> setDifficulty(e.target.value);
+
+  document.getElementById('helpBtn').onclick = ()=> { rules.hidden=false; };
+  const rules = document.getElementById('rulesModal');
+  document.getElementById('closeRules').onclick = ()=> { rules.hidden=true; };
+
+  const tips = [
+    "Tip: Hold Space to power your kick.",
+    "Tip: Juke the defender—change direction right before contact.",
+    "Tip: Easy mode slows the AI.",
+    "Tip: Kick diagonally to lead the ball into open turf."
+  ];
+  setInterval(()=>{
+    const t = tips[(Math.random()*tips.length)|0];
+    const el = document.getElementById('tipLine');
+    if (el) el.textContent = t;
+  }, 6000);
+
+  function updateHUD(){
+    const mm=String(Math.floor(clock/60)); const ss=String(clock%60).padStart(2,"0");
+    document.getElementById("time").textContent=`${mm}:${ss}`;
+    document.getElementById("homeScore").textContent=String(score.home);
+    document.getElementById("awayScore").textContent=String(score.away);
+    document.getElementById("possession").textContent=possession;
+  }
+
+  function flash(msg, lockMs=0){
+    inputLocked = lockMs>0 ? true : inputLocked;
+    const el=document.createElement('div');
+    el.textContent=msg;
+    el.style.position='fixed'; el.style.top='50%'; el.style.left='50%';
+    el.style.transform='translate(-50%,-50%)';
+    el.style.padding='18px 22px';
+    el.style.background='#0b1a12ee'; el.style.color='#9ff5bb';
+    el.style.border='1px solid #2e5'; el.style.borderRadius='12px'; el.style.zIndex='9999';
+    document.body.appendChild(el);
+    setTimeout(()=>{ el.remove(); if (lockMs>0) inputLocked=false; }, Math.max(800, lockMs));
+  }
+
+  /* ------------------ Core Mechanics ------------------ */
+  function centerKickoff(serve){
+    map=buildField();
+    ents.home.x=3; ents.home.y=Math.floor(GRID_H/2);
+    ents.away.x=GRID_W-4; ents.away.y=Math.floor(GRID_H/2);
+    ents.ball.x = serve==="HOME" ? ents.home.x+1 : ents.away.x-1;
+    ents.ball.y = Math.floor(GRID_H/2);
+    ents.ball.vx=0; ents.ball.vy=0;
+    possession=serve;
+  }
+
+  function drawField(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    for (let y=0; y<GRID_H; y++) {
+      for (let x=0; x<GRID_W; x++) {
+        // subtle board shading
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = ((x+y)%2) ? '#fff' : '#000';
+        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+        ctx.globalAlpha = 1;
+
+        const token = tileAt(x,y);
+        putEmoji(x,y, TILES[token] || TILES.G);
+      }
+    }
+    // midline
+    for (let y=0; y<GRID_H; y++) putEmoji(Math.floor(GRID_W/2), y, '⬜️');
+
+    putEmoji(ents.home.x, ents.home.y, P1);
+    putEmoji(ents.away.x, ents.away.y, P2);
+    putEmoji(ents.ball.x, ents.ball.y, BALL);
+  }
+
+  function move(dx,dy){
+    if(inputLocked) return;
+    lastDir=[ dx!==0?dx:lastDir[0], dy!==0?dy:lastDir[1] ];
+    const nx=clamp(ents.home.x+dx,0,GRID_W-1);
+    const ny=clamp(ents.home.y+dy,0,GRID_H-1);
+    ents.home.x=nx; ents.home.y=ny;
+
+    if(ents.home.x===ents.ball.x && ents.home.y===ents.ball.y){ possession="HOME"; }
+    if(possession==="HOME"){ ents.ball.x=ents.home.x; ents.ball.y=ents.home.y; }
+
+    checkScore(); drawField();
+  }
+
+  function startCharge(){
+    if (inputLocked || possession!=="HOME" || charging) return;
+    charging=true; kickCharge=0;
+    chargeTimer=setInterval(()=>{
+      kickCharge=Math.min(6, kickCharge+1);
+      flash(`Kick Power: ${kickCharge}`);
+    },120);
+  }
+
+  function endCharge(){
+    if(!charging) return;
+    charging=false; clearInterval(chargeTimer);
+    kick(Math.max(1,kickCharge));
+  }
+
+  function kick(power){
+    if(possession!=="HOME") return;
+    const dx=lastDir[0], dy=lastDir[1];
+    if(dx===0 && dy===0) return;
+    possession="LOOSE";
+    ents.ball.vx=dx; ents.ball.vy=dy;
+    let steps=power;
+    if(ballTick){ clearInterval(ballTick); }
+    ballTick=setInterval(()=>{
+      if(steps<=0){ ents.ball.vx=0; ents.ball.vy=0; clearInterval(ballTick); return; }
+      steps-=1;
+      const prevX = ents.ball.x, prevY = ents.ball.y;
+      const bx=clamp(ents.ball.x+ents.ball.vx,0,GRID_W-1);
+      const by=clamp(ents.ball.y+ents.ball.vy,0,GRID_H-1);
+      ents.ball.x=bx; ents.ball.y=by;
+
+      // If we didn't move (hit boundary), stop the ball
+      if (bx===prevX && by===prevY) {
+        ents.ball.vx=0; ents.ball.vy=0; clearInterval(ballTick);
+      }
+
+      // Interception
+      if(ents.away.x===ents.ball.x && ents.away.y===ents.ball.y){ possession="AWAY"; clearInterval(ballTick); }
+
+      checkScore(); drawField();
+    },70);
+  }
+
+  function aiStep(){
+    // small random wiggle so it’s not laser-precise
+    const jx = Math.random() < AI_JITTER ? (Math.random() < 0.5 ? -1 : 1) : 0;
+    const jy = Math.random() < AI_JITTER ? (Math.random() < 0.5 ? -1 : 1) : 0;
+
+    // pick a target
+    let tx,ty;
+    if (possession === "AWAY") {                   // carry toward their end
+      tx = GRID_W - 2;  ty = ents.away.y;
+    } else if (possession === "HOME") {            // chase you
+      tx = ents.home.x; ty = ents.home.y;
+    } else {                                       // loose ball
+      tx = ents.ball.x; ty = ents.ball.y;
+    }
+
+    // distances
+    const dxDist = (tx + jx) - ents.away.x;
+    const dyDist = (ty + jy) - ents.away.y;
+
+    // move ONE tile per tick, choosing the larger gap
+    if (Math.abs(dxDist) > Math.abs(dyDist)) {
+      ents.away.x = clamp(ents.away.x + Math.sign(dxDist), 0, GRID_W - 1);
+    } else if (Math.abs(dyDist) > 0) {
+      ents.away.y = clamp(ents.away.y + Math.sign(dyDist), 0, GRID_H - 1);
+    }
+
+    // pickup / tackle radius (Manhattan)
+    const dist = Math.abs(ents.away.x - ents.ball.x) + Math.abs(ents.away.y - ents.ball.y);
+    if (dist <= AI_REACH) {
+      ents.ball.x = ents.away.x;
+      ents.ball.y = ents.away.y;
+      possession = "AWAY";
+    }
+    if (possession === "AWAY") {
+      ents.ball.x = ents.away.x; 
+      ents.ball.y = ents.away.y;
+    }
+
+    checkScore(); 
+    drawField();
+  }
+
+  function checkScore(){
+    const t = tileAt(ents.ball.x, ents.ball.y);
+    if (t === 'R') {            // ball in RIGHT endzone => Home TD
+      score.home += 1;
+      centerKickoff('AWAY');
+      flash('TOUCHDOWN HOME! 🟢');
+    } else if (t === 'L') {     // ball in LEFT endzone => Away TD
+      score.away += 1;
+      centerKickoff('HOME');
+      flash('TOUCHDOWN AWAY! 🔴');
+    }
+    updateHUD();
+  }
+
+  /* ------------------ Input ------------------ */
+  document.addEventListener('keydown',(e)=>{
+    if(["ArrowUp","w","W"].includes(e.key)) move(0,-1);
+    else if(["ArrowDown","s","S"].includes(e.key)) move(0,1);
+    else if(["ArrowLeft","a","A"].includes(e.key)) move(-1,0);
+    else if(["ArrowRight","d","D"].includes(e.key)) move(1,0);
+    else if(e.key===" "){ e.preventDefault(); startCharge(); }
+  });
+  document.addEventListener('keyup',(e)=>{
+    if(e.key===" "){ e.preventDefault(); endCharge(); }
+  });
+  document.getElementById('restart').onclick=()=> boot();
+
+  /* ------------------ Boot / Reset ------------------ */
+  function boot(){
+    if(tick) clearInterval(tick);
+    if(aiTick) clearInterval(aiTick);
+    if(ballTick) clearInterval(ballTick);
+    score.home=0; score.away=0; clock=60; inputLocked=false; lastDir=[1,0];
+    centerKickoff("HOME");
+    tick=setInterval(()=>{
+      if(clock<=0){
+        clearInterval(tick); clearInterval(aiTick);
+        flash("⏱ Game Over");
+      } else {
+        clock-=1; updateHUD();
+      }
+    },1000);
+    setDifficulty(difficultySel.value);         // sets globals and starts AI loop
+    updateHUD(); drawField();
+  }
+
+  // Start the game
+  boot();
+</script>

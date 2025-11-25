@@ -1,0 +1,300 @@
+// LumeRunner.nine
+// Top-down shard-collection game for NineVM
+
+contract LumeRunner {
+
+  // ------------------------------------------------------------
+  // Constants (by convention – these become storage keys)
+  // ------------------------------------------------------------
+  // Tile IDs
+  // 0 = grass, 1 = rock, 2 = lume, 3 = halo, 4 = corrupted
+  TILE_GRASS    = 0;
+  TILE_ROCK     = 1;
+  TILE_LUME     = 2;
+  TILE_HALO     = 3;
+  TILE_CORRUPT  = 4;
+
+  WORLD_W       = 16;
+  WORLD_H       = 16;
+
+  PLAYER_ID     = 1;
+
+  // ------------------------------------------------------------
+  // Events (for debugging / UI hooks if you wire them)
+  // ------------------------------------------------------------
+  event LumeCollected(x, y);
+  event HaloCollected(x, y);
+  event GameOver(lumes, halos);
+  event TickAdvanced(tick);
+
+  // ------------------------------------------------------------
+  // Helpers
+  // ------------------------------------------------------------
+
+  fn clampInt(x, lo, hi) {
+    if (x < lo) {
+      return lo;
+    }
+    if (x > hi) {
+      return hi;
+    }
+    return x;
+  }
+
+  // Mirror helper: keep a storage mirror of tiles so your
+  // Node adapter (projectVmStateTo2D) can still read tile[...] keys.
+  //
+  // NOTE: Your compiler may not support string concat yet.
+  // If not, you can drop this and update projectVmStateTo2D
+  // to read from VM.world instead of storage keys.
+  fn setTileMirror(x, y, tileId) {
+    // convention: tile[x,y] style key, your compiler should
+    // turn this into a storage index "tile[x,y]"
+    tile[x, y] = tileId;
+    return;
+  }
+
+  fn getTileMirror(x, y) {
+    return tile[x, y];
+  }
+
+  // Place a single tile in both the VM world grid + mirror
+  fn placeTile(x, y, tileId) {
+    Tile.set(0, x, y, tileId);
+    setTileMirror(x, y, tileId);
+    return;
+  }
+
+  // Random-ish helper: very primitive LCG based on time_tick
+  fn randMod(m) {
+    // simple deterministic pseudo-rand based on time_tick
+    seed = time_tick;
+    seed = seed * 1103515245 + 12345;
+    r = seed / 65536;
+    return r % m;
+  }
+
+  // ------------------------------------------------------------
+  // Game setup
+  // ------------------------------------------------------------
+
+  // Initialize world + player + first shards
+  fn initGame(wallet) {
+    world_w = WORLD_W;
+    world_h = WORLD_H;
+
+    // time + scores
+    time_tick    = 0;
+    time_isNight = 0;
+    game_over    = 0;
+
+    score_lumes  = 0;
+    score_halos  = 0;
+
+    // Fill world with grass and border rocks
+    y = 0;
+    while (y < WORLD_H) {
+      x = 0;
+      while (x < WORLD_W) {
+        isBorder = 0;
+
+        if (y == 0) {
+          isBorder = 1;
+        }
+        if (y == WORLD_H - 1) {
+          isBorder = 1;
+        }
+        if (x == 0) {
+          isBorder = 1;
+        }
+        if (x == WORLD_W - 1) {
+          isBorder = 1;
+        }
+
+        if (isBorder == 1) {
+          // rock border
+          placeTile(x, y, TILE_ROCK);
+        } else {
+          // grass
+          placeTile(x, y, TILE_GRASS);
+        }
+
+        x = x + 1;
+      }
+      y = y + 1;
+    }
+
+    // Player entity
+    entity_1_arch   = 0;                // archetype 0 = player
+    entity_1_x      = WORLD_W / 2;
+    entity_1_y      = WORLD_H / 2;
+    entity_1_hp     = 5;
+    entity_1_hpMax  = 5;
+    entity_1_wallet = wallet;
+
+    // World / time for engine
+    World.setTime(0, false);
+
+    // Spawn some shards
+    spawnRandomShard(5, TILE_LUME);   // 5 lumes
+    spawnRandomShard(1, TILE_HALO);   // 1 halo
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Spawners
+  // ------------------------------------------------------------
+
+  // Spawn `count` shards of `tileType` (LUME or HALO)
+  fn spawnRandomShard(count, tileType) {
+    c = 0;
+    while (c < count) {
+      rx = randMod(WORLD_W);
+      ry = randMod(WORLD_H);
+
+      // skip borders
+      if (rx <= 0) {
+        c = c + 1; // still advance attempt
+        continue;
+      }
+      if (ry <= 0) {
+        c = c + 1;
+        continue;
+      }
+      if (rx >= WORLD_W - 1) {
+        c = c + 1;
+        continue;
+      }
+      if (ry >= WORLD_H - 1) {
+        c = c + 1;
+        continue;
+      }
+
+      t = getTileMirror(rx, ry);
+
+      // only spawn on grass
+      if (t == TILE_GRASS) {
+        placeTile(rx, ry, tileType);
+      }
+
+      c = c + 1;
+    }
+
+    return;
+  }
+
+  // Spread corruption from random grass tiles
+  fn spreadCorruption(count) {
+    c = 0;
+    while (c < count) {
+      rx = randMod(WORLD_W);
+      ry = randMod(WORLD_H);
+
+      t = getTileMirror(rx, ry);
+
+      if (t == TILE_GRASS) {
+        placeTile(rx, ry, TILE_CORRUPT);
+      }
+
+      c = c + 1;
+    }
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Player control
+  // ------------------------------------------------------------
+
+  fn movePlayer(dx, dy, wallet) {
+    if (game_over == 1) {
+      return;
+    }
+
+    // In v1, we assume entity_1 is the player.
+    // (You can extend later to search for entity by wallet.)
+    if (entity_1_wallet != wallet) {
+      // Not your player – no-op
+      return;
+    }
+
+    x = entity_1_x;
+    y = entity_1_y;
+
+    nx = x + dx;
+    ny = y + dy;
+
+    // clamp within world
+    nx = clampInt(nx, 0, WORLD_W - 1);
+    ny = clampInt(ny, 0, WORLD_H - 1);
+
+    tileHere = getTileMirror(nx, ny);
+
+    // rock is blocked
+    if (tileHere == TILE_ROCK) {
+      return;
+    }
+
+    // move entity + ball
+    entity_1_x = nx;
+    entity_1_y = ny;
+
+    // tile effects
+    if (tileHere == TILE_LUME) {
+      score_lumes = score_lumes + 1;
+      placeTile(nx, ny, TILE_GRASS);
+      emit LumeCollected(nx, ny);
+    }
+
+    if (tileHere == TILE_HALO) {
+      score_halos = score_halos + 1;
+      placeTile(nx, ny, TILE_GRASS);
+      emit HaloCollected(nx, ny);
+    }
+
+    if (tileHere == TILE_CORRUPT) {
+      entity_1_hp = entity_1_hp - 1;
+
+      if (entity_1_hp <= 0) {
+        game_over = 1;
+        emit GameOver(score_lumes, score_halos);
+      }
+    }
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Tick loop – time + corruption + new shards
+  // ------------------------------------------------------------
+
+  fn tick() {
+    if (game_over == 1) {
+      return;
+    }
+
+    // increment mirrors
+    time_tick = time_tick + 1;
+
+    // update VM time object (for 3D/2D engines, Day/Night cycles, etc.)
+    isNight = false;
+    if ((time_tick % 20) >= 10) {
+      isNight = true;
+    }
+    time_isNight = isNight ? 1 : 0;
+    World.setTime(time_tick, isNight);
+
+    // corruption slowly spreads
+    spreadCorruption(2);
+
+    // spawn new lumes occasionally
+    if (time_tick % 10 == 0) {
+      spawnRandomShard(1, TILE_LUME);
+    }
+
+    emit TickAdvanced(time_tick);
+
+    return;
+  }
+}

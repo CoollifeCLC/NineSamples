@@ -1,0 +1,408 @@
+// LumeRunner.nine
+// Top-down shard-collection game for NineVM
+
+contract LumeRunner {
+
+  // ------------------------------------------------------------
+  // Constants
+  // ------------------------------------------------------------
+  // Tile IDs (must match client atlas)
+  // 0 = grass, 1 = rock, 2 = lume, 3 = halo, 4 = corrupted, 5 = path
+  TILE_GRASS    = 0;
+  TILE_ROCK     = 1;
+  TILE_LUME     = 2;
+  TILE_HALO     = 3;
+  TILE_CORRUPT  = 4;
+  TILE_PATH     = 5;
+
+  WORLD_W       = 16;
+  WORLD_H       = 16;
+
+  PLAYER_ID     = 1;
+
+  // ------------------------------------------------------------
+  // Events
+  // ------------------------------------------------------------
+  event LumeCollected(x, y);
+  event HaloCollected(x, y);
+  event GameOver(lumes, halos);
+  event TickAdvanced(tick);
+
+  // ------------------------------------------------------------
+  // Helpers
+  // ------------------------------------------------------------
+
+  fn clampInt(x, lo, hi) {
+    if (x < lo) {
+      return lo;
+    }
+    if (x > hi) {
+      return hi;
+    }
+    return x;
+  }
+
+  // Mirror helper: keep a storage mirror of tiles so adapters
+  // can still read tile[x,y] keys if needed.
+  fn setTileMirror(x, y, tileId) {
+    tile[x, y] = tileId;
+    return;
+  }
+
+  fn getTileMirror(x, y) {
+    return tile[x, y];
+  }
+
+  // Place a single tile in both the VM world grid + mirror
+  fn placeTile(x, y, tileId) {
+    Tile.set(0, x, y, tileId);
+    setTileMirror(x, y, tileId);
+    return;
+  }
+
+  // Random-ish helper: very primitive LCG based on time_tick
+  fn randMod(m) {
+    seed = time_tick;
+    seed = seed * 1103515245 + 12345;
+    r = seed / 65536;
+    return r % m;
+  }
+
+  // ------------------------------------------------------------
+  // Layout helpers
+  // ------------------------------------------------------------
+
+  // Carve a simple plus-shaped path through the world so TILE_PATH
+  // actually shows up in the renderer.
+  fn layPaths() {
+    midX = WORLD_W / 2;
+    midY = WORLD_H / 2;
+
+    // horizontal path (avoid outer rock border)
+    x = 1;
+    while (x < WORLD_W - 1) {
+      placeTile(x, midY, TILE_PATH);
+      x = x + 1;
+    }
+
+    // vertical path
+    y = 1;
+    while (y < WORLD_H - 1) {
+      placeTile(midX, y, TILE_PATH);
+      y = y + 1;
+    }
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Core Game Setup
+  // ------------------------------------------------------------
+
+  // Internal game initializer (kept for reuse)
+  fn initGameInternal(wallet) {
+    world_w = WORLD_W;
+    world_h = WORLD_H;
+
+    // time + scores
+    time_tick    = 0;
+    time_isNight = 0;
+    game_over    = 0;
+
+    score_lumes  = 0;
+    score_halos  = 0;
+
+    // Fill world with grass and border rocks
+    y = 0;
+    while (y < WORLD_H) {
+      x = 0;
+      while (x < WORLD_W) {
+        isBorder = 0;
+
+        if (y == 0) {
+          isBorder = 1;
+        }
+        if (y == WORLD_H - 1) {
+          isBorder = 1;
+        }
+        if (x == 0) {
+          isBorder = 1;
+        }
+        if (x == WORLD_W - 1) {
+          isBorder = 1;
+        }
+
+        if (isBorder == 1) {
+          // rock border
+          placeTile(x, y, TILE_ROCK);
+        } else {
+          // grass
+          placeTile(x, y, TILE_GRASS);
+        }
+
+        x = x + 1;
+      }
+      y = y + 1;
+    }
+
+    // Lay down paths over the grass (center cross)
+    layPaths();
+
+    // Player entity – centered; wallet may be set later
+    entity_1_arch   = 0;                // archetype 0 = player
+    entity_1_x      = WORLD_W / 2;
+    entity_1_y      = WORLD_H / 2;
+    entity_1_hp     = 5;
+    entity_1_hpMax  = 5;
+    entity_1_wallet = wallet;
+
+    // World / time for engine
+    World.setTime(0, false);
+
+    // Spawn some shards (they only spawn on grass)
+    spawnRandomShard(5, TILE_LUME);   // 5 lumes
+    spawnRandomShard(1, TILE_HALO);   // 1 halo
+
+    return;
+  }
+
+  // Original external initializer (kept for compatibility if needed)
+  fn initGame(wallet) {
+    initGameInternal(wallet);
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Spawners
+  // ------------------------------------------------------------
+
+  fn spawnRandomShard(count, tileType) {
+    c = 0;
+    while (c < count) {
+      rx = randMod(WORLD_W);
+      ry = randMod(WORLD_H);
+
+      // skip borders
+      if (rx <= 0) {
+        c = c + 1;
+        continue;
+      }
+      if (ry <= 0) {
+        c = c + 1;
+        continue;
+      }
+      if (rx >= WORLD_W - 1) {
+        c = c + 1;
+        continue;
+      }
+      if (ry >= WORLD_H - 1) {
+        c = c + 1;
+        continue;
+      }
+
+      t = getTileMirror(rx, ry);
+
+      // only spawn on grass
+      if (t == TILE_GRASS) {
+        placeTile(rx, ry, tileType);
+      }
+
+      c = c + 1;
+    }
+
+    return;
+  }
+
+  fn spreadCorruption(count) {
+    c = 0;
+    while (c < count) {
+      rx = randMod(WORLD_W);
+      ry = randMod(WORLD_H);
+
+      t = getTileMirror(rx, ry);
+
+      if (t == TILE_GRASS) {
+        placeTile(rx, ry, TILE_CORRUPT);
+      }
+
+      c = c + 1;
+    }
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Player control
+  // ------------------------------------------------------------
+
+  fn movePlayer(dx, dy, wallet) {
+    if (game_over == 1) {
+      return;
+    }
+
+    // simple single-player: entity_1 is the player
+    if (entity_1_wallet != wallet) {
+      return;
+    }
+
+    x = entity_1_x;
+    y = entity_1_y;
+
+    nx = x + dx;
+    ny = y + dy;
+
+    // clamp within world
+    nx = clampInt(nx, 0, WORLD_W - 1);
+    ny = clampInt(ny, 0, WORLD_H - 1);
+
+    tileHere = getTileMirror(nx, ny);
+
+    // rock is blocked
+    if (tileHere == TILE_ROCK) {
+      return;
+    }
+
+    // move entity
+    entity_1_x = nx;
+    entity_1_y = ny;
+
+    // tile effects
+    if (tileHere == TILE_LUME) {
+      score_lumes = score_lumes + 1;
+      placeTile(nx, ny, TILE_GRASS);
+      emit LumeCollected(nx, ny);
+    }
+
+    if (tileHere == TILE_HALO) {
+      score_halos = score_halos + 1;
+      placeTile(nx, ny, TILE_GRASS);
+      emit HaloCollected(nx, ny);
+    }
+
+    if (tileHere == TILE_CORRUPT) {
+      entity_1_hp = entity_1_hp - 1;
+
+      if (entity_1_hp <= 0) {
+        game_over = 1;
+        emit GameOver(score_lumes, score_halos);
+      }
+    }
+
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Tick loop – time + corruption + new shards
+  // ------------------------------------------------------------
+
+  fn tick() {
+    if (game_over == 1) {
+      return;
+    }
+
+    // increment mirrors
+    time_tick = time_tick + 1;
+
+    // update VM time object (for 3D/2D engines, Day/Night cycles, etc.)
+    isNight = false;
+    if ((time_tick % 20) >= 10) {
+      isNight = true;
+    }
+    time_isNight = isNight ? 1 : 0;
+    World.setTime(time_tick, isNight);
+
+    // corruption slowly spreads
+    spreadCorruption(2);
+
+    // spawn new lumes occasionally
+    if (time_tick % 10 == 0) {
+      spawnRandomShard(1, TILE_LUME);
+    }
+
+    emit TickAdvanced(time_tick);
+
+    return;
+  }
+
+  // ============================================================
+  // STANDARD ENTRYPOINTS FOR NINEVM + 2D ENGINE
+  // ============================================================
+
+  // Engine boot: called first
+  fn init_world() {
+    // Init world with a neutral wallet; spawn_player will assign real wallet
+    initGameInternal(0);
+    entity_1_wallet = 0;
+    return;
+  }
+
+  // Engine boot: called after init_world with { wallet }
+  fn intent_spawn_player(wallet) {
+    // Attach the wallet to the existing player entity
+    entity_1_wallet = wallet;
+    // Optionally reset HP here if you want:
+    entity_1_hp    = 5;
+    entity_1_hpMax = 5;
+    return;
+  }
+
+  // Engine polling: { p, r, include }
+  fn entities_near(p, r, include) {
+    // No-op: state projection happens on the server side.
+    return;
+  }
+
+  // Movement intent: dir = 0,1,2,3 (N,S,E,W)
+  fn intent_move(actor, dir) {
+    dx = 0;
+    dy = 0;
+
+    if (dir == 0) {        // N
+      dy = -1;
+    }
+    if (dir == 1) {        // S
+      dy = 1;
+    }
+    if (dir == 2) {        // E
+      dx = 1;
+    }
+    if (dir == 3) {        // W
+      dx = -1;
+    }
+
+    // Single-player assumption: PLAYER_ID == entity_1
+    movePlayer(dx, dy, entity_1_wallet);
+
+    return;
+  }
+
+  fn intent_attack(actor, target) {
+    // No combat in LumeRunner yet.
+    return;
+  }
+
+  fn intent_pickup(actor, lootId) {
+    // No dedicated loot entities in this version.
+    return;
+  }
+
+  fn intent_use(actor, itemId) {
+    // Could be wired to potions later.
+    return;
+  }
+
+  fn intent_craft(actor, recipeIndex) {
+    // Not used in this game.
+    return;
+  }
+
+  fn intent_use_tile(actor, tile, meta) {
+    // Click/tap interactions can be added later.
+    return;
+  }
+
+  fn intent_interact_tile(actor, tile, action) {
+    // Higher-level tile interactions (e.g. vendors, doors).
+    return;
+  }
+}

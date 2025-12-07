@@ -136,8 +136,9 @@ contract LumeRunner {
   }
 
   // Original external initializer (kept for compatibility if needed)
-  fn initGame(wallet) {
-    initGameInternal(wallet);
+  fn init_world(ctx) {
+    wallet = ctx.wallet;
+    initGame(wallet);
     return;
   }
 

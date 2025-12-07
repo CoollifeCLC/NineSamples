@@ -3,9 +3,7 @@
 
 # 🧠 NineSamples
 
-Welcome to the official sample repository for **Nine Ether Blockchain** `.nine` smart contract files and Web4 games.
-
-This repo is home to working examples built using the **.nine syntax** — a lightweight language for building games, UI, and smart contracts that run natively on the **Nine Ether Chain**.
+Welcome to the official sample repository for **Nine Ether Statechain** `.nine` smart contract files and Web4 games.
 
 ---
 
@@ -40,9 +38,7 @@ Contains `.nine` files representing different game and UI samples:
 ---
 
 ## 🛠 Built With
-
-* **Nine Ether (.nine)** — A minimal syntax for decentralized Web4 apps and games
-* **Contract OS** — The visual editor and deployment platform for `.nine` projects
+* **Contract OS**
 
 ---
 

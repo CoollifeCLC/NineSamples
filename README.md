@@ -1,4 +1,3 @@
-![MIT License](https://img.shields.io/badge/license-MIT-green)
 ![Made with Nine Ether](https://img.shields.io/badge/built%20with-.nine-blueviolet)
 
 # 🧠 NineSamples  
